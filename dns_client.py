@@ -1,7 +1,7 @@
+import argparse
 import random
 import socket
 import struct
-import sys
 from dataclasses import dataclass
 
 DNS_DEFAULT_IP = "8.8.8.8"  # Google's public DNS server
@@ -296,14 +296,15 @@ def convert_dns_class(dns_class) -> str | None:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python dns_client.py <domain_name> [dns_server_ip]")
-        exit(1)
-    dns_server = DNS_DEFAULT_IP
-    if len(sys.argv) >= 3:
-        # Use the specified DNS server
-        dns_server = sys.argv[2]
-    domain_name = sys.argv[1]
+    arg_parser = argparse.ArgumentParser(
+        "dns-client",
+        description="A simple DNS Client that can request A records.",
+    )
+    arg_parser.add_argument("domain_name")
+    arg_parser.add_argument("dns_server_ip", nargs="?", default=DNS_DEFAULT_IP)
+
+    args = arg_parser.parse_args()
+
     (
         response_header,
         _,
@@ -311,9 +312,9 @@ def main():
         response_nameserver,
         response_additional,
         remaining_data,
-    ) = perform_query(domain_name, dns_server)
-    print("DNS server:", dns_server)
-    print(f"DNS Address: {dns_server}#{DNS_PORT}")
+    ) = perform_query(args.domain_name, args.dns_server_ip)
+    print("DNS server:", args.dns_server_ip)
+    print(f"DNS Address: {args.dns_server_ip}:{DNS_PORT}")
     print()
     print("Num Questions:", response_header.qdcount)
     print("Num Answers", response_header.ancount)
