@@ -1,52 +1,47 @@
-import socket
-import sys
-import struct
 import random
+import socket
+import struct
+import sys
 from dataclasses import dataclass
 
-DNS_DEFAULT_IP = "8.8.8.8" # Google's public DNS server
-DNS_PORT = 53 # DNS port number
+DNS_DEFAULT_IP = "8.8.8.8"  # Google's public DNS server
+DNS_PORT = 53  # DNS port number
 DNS_HEADER_SIZE = 12
-DNS_REQUEST_FLAGS = 0x0100 # Standard query with recursion desired
+DNS_REQUEST_FLAGS = 0x0100  # Standard query with recursion desired
 
 DNS_RECORD_TYPES = {
-    1: 'A',
-    2: 'NS',
-    5: 'CNAME',
-    6: 'SOA',
-    12: 'PTR',
-    15: 'MX',
-    16: 'TXT',
-    28: 'AAAA',
-    33: 'SRV',
-    41: 'OPT',
-    43: 'DS',
-    46: 'RRSIG',
-    47: 'NSEC',
-    48: 'DNSKEY',
-    255: 'ANY'
+    1: "A",
+    2: "NS",
+    5: "CNAME",
+    6: "SOA",
+    12: "PTR",
+    15: "MX",
+    16: "TXT",
+    28: "AAAA",
+    33: "SRV",
+    41: "OPT",
+    43: "DS",
+    46: "RRSIG",
+    47: "NSEC",
+    48: "DNSKEY",
+    255: "ANY",
 }
 
-DNS_CLASSES = {
-    1: 'IN',
-    2: 'CS',
-    3: 'CH',
-    4: 'HS',
-    255: 'ANY'
-}
+DNS_CLASSES = {1: "IN", 2: "CS", 3: "CH", 4: "HS", 255: "ANY"}
 
 # List to store the start and end indices of any non A records
 # This is used to handle compressed domain names in the RDATA field
 # The indices are used to determine the maximum length of the domain name
-RDATA_INDEX_LIST = []
+RDATA_INDEX_LIST: list[tuple[int, int]] = []
+
 
 # Function to parse a domain name from a DNS packet
 # The domain name is stored as a sequence of labels, each of which is a length-prefixed string
 # The labels are separated by a period
 # The domain name is terminated by a zero-length label
 # The function returns the domain name and the offset of the next byte in the packet
-def parse_qname(data, offset) -> str:
-    qname = ''
+def parse_qname(data: bytes, offset: int) -> tuple[str, int]:
+    qname = ""
     i = offset
 
     # Determine the maximum length of the domain name
@@ -59,10 +54,10 @@ def parse_qname(data, offset) -> str:
     while i < max_i:
         if (data[i] & 0xC0) == 0xC0:
             # Name is compressed
-            compression_offset = struct.unpack('!H', data[i:i+2])[0] & 0x3FFF
+            compression_offset = struct.unpack("!H", data[i : i + 2])[0] & 0x3FFF
             qname_compressed, _ = parse_qname(data, compression_offset)
             if i != offset:
-                qname += '.'
+                qname += "."
             qname += qname_compressed
             i += 2
             continue
@@ -70,8 +65,8 @@ def parse_qname(data, offset) -> str:
         if label_len == 0:
             break
         if i != offset:
-            qname += '.'
-        qname += data[i+1:i+1+label_len].decode()
+            qname += "."
+        qname += data[i + 1 : i + 1 + label_len].decode()
         i += label_len + 1
     i += 1
     return qname, i
@@ -82,24 +77,33 @@ class DNSHeader:
     # DNS header fields
     id: int
     flags: int
-    qdcount: int # Num Questions
-    ancount: int # Num Answers
-    nscount: int # Num Nameserver records
-    arcount: int # Num Additional records
+    qdcount: int  # Num Questions
+    ancount: int  # Num Answers
+    nscount: int  # Num Nameserver records
+    arcount: int  # Num Additional records
 
     # Function to pack the DNS header into a byte string
     def pack(self) -> bytes:
-        return struct.pack('!HHHHHH', self.id, self.flags, self.qdcount, self.ancount, self.nscount, self.arcount)
-    
+        return struct.pack(
+            "!HHHHHH",
+            self.id,
+            self.flags,
+            self.qdcount,
+            self.ancount,
+            self.nscount,
+            self.arcount,
+        )
+
     def is_authoritative(self) -> bool:
         return (self.flags & 0x0400) == 0x0400
-    
+
     # Function to unpack a byte string into a DNS header object
     @classmethod
-    def unpack(cls, data: bytes) -> 'DNSHeader':
-        fields = struct.unpack('!HHHHHH', data[:DNS_HEADER_SIZE])
+    def unpack(cls, data: bytes) -> "DNSHeader":
+        fields = struct.unpack("!HHHHHH", data[:DNS_HEADER_SIZE])
         return cls(*fields)
-    
+
+
 @dataclass
 class DNSQuestion:
     # DNS question fields
@@ -109,25 +113,26 @@ class DNSQuestion:
 
     # Function to pack the DNS question into a byte string
     def pack(self) -> bytes:
-        qname_encoded = b''
+        qname_encoded = b""
         # Encode the domain name by splitting it into labels and encoding each label
         # The labels are length-prefixed and separated by a period
-        for label in self.qname.split('.'):
-            qname_encoded += struct.pack('!B', len(label))
+        for label in self.qname.split("."):
+            qname_encoded += struct.pack("!B", len(label))
             qname_encoded += label.encode()
-        qname_encoded += b'\x00'
+        qname_encoded += b"\x00"
         # Pack the qtype and qclass fields and return the packed data
-        return qname_encoded + struct.pack('!HH', self.qtype, self.qclass)
-    
+        return qname_encoded + struct.pack("!HH", self.qtype, self.qclass)
+
     # Function to unpack a byte string into a DNS question object
     @classmethod
-    def unpack(cls, data: bytes, offset=DNS_HEADER_SIZE) -> tuple['DNSQuestion', int]:
+    def unpack(cls, data: bytes, offset=DNS_HEADER_SIZE) -> tuple["DNSQuestion", int]:
         i = offset
         # Dynamically parse the domain name
         qname, i = parse_qname(data, i)
-        qtype, qclass = struct.unpack('!HH', data[i:i+4])
-        return cls(qname, qtype, qclass), i+4
-    
+        qtype, qclass = struct.unpack("!HH", data[i : i + 4])
+        return cls(qname, qtype, qclass), i + 4
+
+
 @dataclass
 class DNSResource:
     # DNS resource fields
@@ -135,16 +140,16 @@ class DNSResource:
     rr_type: int
     rr_class: int
     ttl: int
-    rdata: bytes
-    
+    rdata: str | bytes
+
     # Function unpack the DNS resource record from a byte string
     @classmethod
-    def unpack(cls, data: bytes, offset: int) -> tuple['DNSResource', int]:
+    def unpack(cls, data: bytes, offset: int) -> tuple["DNSResource", int]:
         i = offset
         # Parse the name
         if (data[i] & 0xC0) == 0xC0:
             # Name is compressed
-            compression_offset = struct.unpack('!H', data[i:i+2])[0] & 0x3FFF
+            compression_offset = struct.unpack("!H", data[i : i + 2])[0] & 0x3FFF
             qname, _ = parse_qname(data, compression_offset)
             i += 2
         else:
@@ -152,11 +157,11 @@ class DNSResource:
             qname, i = parse_qname(data, i)
 
         # Unpack the type, class, TTL, and data length
-        qtype, qclass, ttl, data_length = struct.unpack('!HHIH', data[i:i+10])
+        qtype, qclass, ttl, data_length = struct.unpack("!HHIH", data[i : i + 10])
         i += 10
 
         # Extract the data
-        answer_data = data[i:i+data_length]
+        answer_data = data[i : i + data_length]
 
         # If it's an A record, decode the IP address
         if qtype == 1 and qclass == 1 and data_length == 4:
@@ -164,21 +169,32 @@ class DNSResource:
         # If it's a CNAME record keep track of the start and index
         # to assist in locating the end when used in message compression
         else:
-            RDATA_INDEX_LIST.append((i, i+data_length))
+            RDATA_INDEX_LIST.append((i, i + data_length))
 
         i += data_length
 
         return cls(qname, qtype, qclass, ttl, answer_data), i
 
+
 # Function to build a DNS query for a domain name
-def build_dns_query(domain_name) -> tuple[DNSHeader, DNSQuestion]:
+def build_dns_query(domain_name: str) -> tuple[DNSHeader, DNSQuestion]:
     # Generate a random ID for the DNS query
     id = random.randint(0, 65535)
     dns_header = DNSHeader(id, DNS_REQUEST_FLAGS, 1, 0, 0, 0)
     dns_question = DNSQuestion(domain_name, 1, 1)
     return dns_header, dns_question
 
-def parse_dns_response(data) -> tuple[DNSHeader, list[DNSQuestion], list[DNSResource], list[DNSResource], list[DNSResource], bytes]:
+
+def parse_dns_response(
+    data: bytes,
+) -> tuple[
+    DNSHeader,
+    list[DNSQuestion],
+    list[DNSResource],
+    list[DNSResource],
+    list[DNSResource],
+    bytes,
+]:
     # Unpack the DNS header
     dns_header = DNSHeader.unpack(data)
     offset = DNS_HEADER_SIZE
@@ -195,7 +211,7 @@ def parse_dns_response(data) -> tuple[DNSHeader, list[DNSQuestion], list[DNSReso
         dns_answer, offset = DNSResource.unpack(data, offset)
         dns_answers.append(dns_answer)
     dns_nameservers = []
-    for _ in range (dns_header.nscount):
+    for _ in range(dns_header.nscount):
         dns_ns, offset = DNSResource.unpack(data, offset)
         dns_nameservers.append(dns_ns)
     dns_additional = []
@@ -203,9 +219,26 @@ def parse_dns_response(data) -> tuple[DNSHeader, list[DNSQuestion], list[DNSReso
         dns_add, offset = DNSResource.unpack(data, offset)
         dns_additional.append(dns_add)
     # Return the DNS header, questions, answers, and any remaining data that might exist
-    return dns_header, dns_questions, dns_answers, dns_nameservers, dns_additional, data[offset:]
+    return (
+        dns_header,
+        dns_questions,
+        dns_answers,
+        dns_nameservers,
+        dns_additional,
+        data[offset:],
+    )
 
-def perform_query(domain_name, dns_server) -> tuple[DNSHeader, list[DNSQuestion], list[DNSResource], list[DNSResource], list[DNSResource], bytes]:
+
+def perform_query(
+    domain_name: str, dns_server: str
+) -> tuple[
+    DNSHeader,
+    list[DNSQuestion],
+    list[DNSResource],
+    list[DNSResource],
+    list[DNSResource],
+    bytes,
+]:
     # Create the UDP socket and send the query to the DNS server
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # Build the DNS query
@@ -217,7 +250,14 @@ def perform_query(domain_name, dns_server) -> tuple[DNSHeader, list[DNSQuestion]
     data, _ = sock.recvfrom(512)
     sock.close()
     # Parse the response and then verify the response
-    response_header, response_questions, response_answers, response_nameserver, response_additional, remaining_data = parse_dns_response(data)
+    (
+        response_header,
+        response_questions,
+        response_answers,
+        response_nameserver,
+        response_additional,
+        remaining_data,
+    ) = parse_dns_response(data)
     # Check header flags for any errors based on RFC 1035
     if query_header.id != response_header.id:
         print("Error: ID mismatch")
@@ -237,13 +277,23 @@ def perform_query(domain_name, dns_server) -> tuple[DNSHeader, list[DNSQuestion]
     if response_header.flags & 0xF == 5:
         print("Error: Server refused")
         exit(1)
-    return response_header, response_questions, response_answers, response_nameserver, response_additional, remaining_data
+    return (
+        response_header,
+        response_questions,
+        response_answers,
+        response_nameserver,
+        response_additional,
+        remaining_data,
+    )
 
-def convert_dns_type(dns_type) -> str:
+
+def convert_dns_type(dns_type) -> str | None:
     return DNS_RECORD_TYPES.get(dns_type, dns_type)
 
-def convert_dns_class(dns_class) -> str:
+
+def convert_dns_class(dns_class) -> str | None:
     return DNS_CLASSES.get(dns_class, dns_class)
+
 
 def main():
     if len(sys.argv) < 2:
@@ -254,7 +304,14 @@ def main():
         # Use the specified DNS server
         dns_server = sys.argv[2]
     domain_name = sys.argv[1]
-    response_header, response_questions, response_answers, response_nameserver, response_additional, remaining_data = perform_query(domain_name, dns_server)
+    (
+        response_header,
+        _,
+        response_answers,
+        response_nameserver,
+        response_additional,
+        remaining_data,
+    ) = perform_query(domain_name, dns_server)
     print("DNS server:", dns_server)
     print(f"DNS Address: {dns_server}#{DNS_PORT}")
     print()
@@ -315,5 +372,6 @@ def main():
         # Print any remaining data that was not parsed
         print("Remaining data (unparsed):", remaining_data)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
