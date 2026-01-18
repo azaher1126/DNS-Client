@@ -1,0 +1,23 @@
+[project]
+name = "simple-dns-client"
+version = "0.0.1"
+authors = [
+    {name = "Ayman Zaher", email = "11262003a@gmail.com"}
+]
+description = "A simple CLI DNS client that can request A records."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/azaher1126/DNS-Client"
+Repository = "https://github.com/azaher1126/DNS-Client"
+Issues = "https://github.com/azaher1126/DNS-Client/issues"
+
+[project.scripts]
+dns-client = "dns_client:main"
